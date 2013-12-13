@@ -64,6 +64,7 @@ std::string getImageType(int number)
 int main(int argc, char** argv)
 {
 string path = img_path;
+cout << 100 << " " << 3600 << endl;
 for(int kk = 1; kk <= 100; kk++) {
 path = img_path;
 path.append("im");
