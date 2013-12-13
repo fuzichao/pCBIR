@@ -64,7 +64,7 @@ std::string getImageType(int number)
 int main(int argc, char** argv)
 {
 string path = img_path;
-for(int kk = 1; kk < 2; kk++) {
+for(int kk = 1; kk <= 100; kk++) {
 path = img_path;
 path.append("im");
 char tmpp[10];
@@ -72,7 +72,6 @@ memset(tmpp, 0, 10);
 sprintf(tmpp, "%d", kk);
 path.append(tmpp);
 path.append(".jpg");
-cout << path <<endl;
   Mat src, src_HSV;
   src = imread( path.c_str() );
   cvtColor( src, src_HSV, CV_BGR2HSV );
@@ -329,8 +328,9 @@ Mat img;
   }
   //cout<< "size is " << hogStride * dimension << endl; 
   for(int i = 0; i < hogStride * dimension; i++) {
-    cout << hogFeature[i] << endl;
+    cout << hogFeature[i] << " ";
   }
+  cout << endl;
   delete[] hogFeature;
   delete[] hog;     
   delete[] hogNorm;
