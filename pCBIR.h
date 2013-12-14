@@ -1,6 +1,8 @@
 #include <mpi.h>
 #include <iostream>
+#include <fstream>
 #include <cmath>
+using namespace std;
 /*
 struct featureT {
   int id;
@@ -9,4 +11,4 @@ struct featureT {
 }*/
 
 
-double* readFeatures(char* filename);
+double* readFeatures(const char* filename);
