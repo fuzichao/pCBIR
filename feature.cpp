@@ -5,13 +5,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <cmath>
 #include <vector>
 using namespace cv;
 using namespace std;
 
-const char* img_path = "/home/zichao/images/";
+const char* out_path = "feature_input";
+const char* img_path = "/home/zichao/image.orig/";
 const double PI = 3.141592653;
 const int H_nbins = 18;
 const int S_nbins = 3;
@@ -19,80 +21,24 @@ const int V_nbins = 3;
 const int totalbins = H_nbins * S_nbins * V_nbins;
 //suggested by http://scien.stanford.edu/pages/labsite/2002/psych221/projects/02/sojeong
 
-std::string getImageType(int number)
-{
-    // find type
-    int imgTypeInt = number%8;
-    std::string imgTypeString;
-
-    switch (imgTypeInt)
-    {
-        case 0:
-            imgTypeString = "8U";
-            break;
-        case 1:
-            imgTypeString = "8S";
-            break;
-        case 2:
-            imgTypeString = "16U";
-            break;
-        case 3:
-            imgTypeString = "16S";
-            break;
-        case 4:
-            imgTypeString = "32S";
-            break;
-        case 5:
-            imgTypeString = "32F";
-            break;
-        case 6:
-            imgTypeString = "64F";
-            break;
-        default:
-            break;
-    }
-
-    // find channel
-    int channel = (number/8) + 1;
-
-    std::stringstream type;
-    type<<"CV_"<<imgTypeString<<"C"<<channel;
-
-    return type.str();
-}
 
 int main(int argc, char** argv)
 {
 string path = img_path;
-cout << 100 << " " << 562500 << endl;
-for(int kk = 1; kk <= 100; kk++) {
-path = img_path;
-path.append("im");
-char tmpp[10];
-memset(tmpp, 0, 10);
-sprintf(tmpp, "%d", kk);
-path.append(tmpp);
-path.append(".jpg");
+cout << 999 << " " << totalbins<<endl;//562500 << endl;
+for(int kk = 1; kk <= 999; kk++) {
+  path = img_path;
+  char tmpp[10];
+  memset(tmpp, 0, 10);
+  sprintf(tmpp, "%d", kk);
+  path.append(tmpp);
+  path.append(".jpg");
   Mat src, src_HSV;
   src = imread( path.c_str() );
   cvtColor( src, src_HSV, CV_BGR2HSV );
-  Size dsize = Size(500, 500);//resize image
+  Size dsize = Size(300, 300);//resize image
   Mat img1;// = Mat(dsize, CV_32S);
   resize(src_HSV, img1, dsize);
-//test
-/*
-  cout << "dims: " << img.dims;
-  cout << " rows:" << img.rows;
-  cout << " cols:" << img.cols;
-  cout << " flags:" << img.flags;
-  cout << " type:" << getImageType(img.type());
-  cout << endl; 
-  Vec3b pixel = img.at<Vec3b>(1,1);
-  for (int i = 0; i < 6; i++)
-    cout << "H:" << (unsigned int)pixel[i] <<endl;
-//  imshow( "test", img );
-//  waitKey(0);
-*/
 //color histogram part
 //init an array for historgam
   double hist[totalbins];
@@ -100,8 +46,8 @@ path.append(".jpg");
     hist[i] =0;
   }
 //serial version: traverse each pixels one by one
-  for(int x = 0; x < 500; x++) {
-    for(int y = 0; y < 500; y++) {
+  for(int x = 0; x < 300; x++) {
+    for(int y = 0; y < 300; y++) {
       Vec3b pixel = img1.at<Vec3b>(x, y);
       double H = pixel[0] * 2;
       double S = (double) pixel[1] / 255.0;
@@ -110,43 +56,45 @@ path.append(".jpg");
       int S_index = fmin(floor( S * 3  ), 2);    
       int V_index = fmin(floor( V * 3  ), 2);   
       hist[H_index * S_nbins * V_nbins + S_index * V_nbins + V_index]++;
-      if(src.dims > 5) {
-        cout <<x<< " " <<y <<endl;
-        cout <<"a"<<endl;
-        return -1;
-      }
     }
   }
 
-//show results
+  ofstream ofile (out_path, ios::out|ios::binary | ios::app);
+  ofile.write((char*)hist, sizeof(double) * totalbins);
+  ofile.close();
+
 /*
-  for(int i=0; i < totalbins; i++){
-    int h = i / (S_nbins * V_nbins);
-    int s = (i - h * (S_nbins * V_nbins)) / V_nbins;
-    int v = i % V_nbins;
-    cout << "["<< h << ", " << s << ", " << v << "]: "<<(int)hist[i]<<endl;
-  }
-*/
-/*  Mat t, tt;
+Mat t, tt;
   
-  t = imread( img_path , 0);
+  t = imread( path , 0);
+  resize(t, tt, dsize);
 //  cvtColor( src, t, CV_BGR2GRAY );//change to gray scale  
   SiftFeatureDetector dt;
   vector<KeyPoint> keys;
-  dt.detect(t, keys);
-  drawKeypoints(t, keys, tt);
-  imshow("result ",tt);
-  waitKey(0);
+  dt.detect(tt, keys);
+SiftDescriptorExtractor extractor;
+for(int jj =0; jj < keys.size(); jj++)
+  cout << keys[jj] << " " ;
+cout << endl;
+
+    Mat des;
+    extractor.compute(tt,keys,des);
+  cout << keys.size()<< " "<< des.cols<< " "<<des.rows<<endl;
+ // drawKeypoints(t, keys, tt);
+ // imshow("result ",tt);
+ // waitKey(0);
 */
 //HOG feature extraction
-Mat img;
+
+  src = imread( path.c_str(), 0);
+  Mat img;
   resize(src, img, dsize);
 
 
   int numOrientations = 9;
   int glyphSize = 21;
-  int cellSize = 4;
-  int imgWidth = 500, imgHeight = 500;
+  int cellSize = 40;
+  int imgWidth = 300, imgHeight = 300;
   int hogWidth = (imgWidth + cellSize/2) / cellSize;
   int hogHeight = (imgHeight + cellSize/2) /cellSize;
   double orientX[numOrientations];
@@ -187,7 +135,7 @@ Mat img;
     }
   }
   //prepare buffer
-  int numChannels = 3;
+  int numChannels = 1;
   int k;
   int hogStride = hogWidth * hogHeight;
   int channelStride = imgWidth * imgHeight;
@@ -251,10 +199,10 @@ Mat img;
         wy2 = hy - biny;
         wx1 = 1.0 - wx2;
         wy1 = 1.0 - wy2;
-        wx1 *= orientationWeights[0];
-        wx2 *= orientationWeights[0];
-        wy1 *= orientationWeights[0];
-        wy2 *= orientationWeights[0];
+        wx1 *= orientationWeights[o];
+        wx2 *= orientationWeights[o];
+        wy1 *= orientationWeights[o];
+        wy2 *= orientationWeights[o];
       
         if (binx >= 0 && biny >= 0) {
           hog[binx + biny * hogWidth + orientation * hogStride] += grad * wx1 *wy1;
@@ -273,7 +221,7 @@ Mat img;
   }
   double* hogFeature = new double[hogWidth * hogHeight * dimension];
   //extract results
-  /*compute the L2 norm*/
+  //compute the L2 norm
   double * iter = hog;
   for (k =0; k < numOrientations; k++) {
     double* current = hogNorm;
@@ -287,21 +235,21 @@ Mat img;
       iter ++;
     }
   }
-  /*block-normlization*/
+  //block-normlization
   iter = hog;
   for (int y = 0; y < hogHeight; y++) {
     for (int x = 0; x < hogWidth; x++) {
       int xm = fmax ( x - 1, 0);
       int xp = fmin ( x + 1, hogWidth - 1);
       int ym = fmax ( y - 1, 0);
-      int yp = fmax ( y + 1, hogHeight - 1);
+      int yp = fmin ( y + 1, hogHeight - 1);
     
       double norm1 = hogNorm[xm + ym * hogWidth];
       double norm2 = hogNorm[x + ym * hogWidth];
       double norm3 = hogNorm[xp + ym * hogWidth];
       double norm4 = hogNorm[xm + y * hogWidth];
       double norm5 = hogNorm[x + y * hogWidth];
-      double norm6 = hogNorm[xp + yp * hogWidth];
+      double norm6 = hogNorm[xp + y * hogWidth];
       double norm7 = hogNorm[xm + yp * hogWidth];
       double norm8 = hogNorm[x + yp *hogWidth];
       double norm9 = hogNorm[xp + yp * hogWidth];
@@ -328,16 +276,16 @@ Mat img;
      }
   }
   //cout<< "size is " << hogStride * dimension << endl; 
-  for(int i = 0; i < hogStride * dimension; i++) {
-    cout << hogFeature[i] << " ";
-  }
-  cout << endl;
+//  for(int i = 0; i < hogStride * dimension; i++) {
+//    cout << hogFeature[i] << " ";
+//  }
+//  cout << endl;
   delete[] hogFeature;
   delete[] hog;     
   delete[] hogNorm;
-  src.release();
-  src_HSV.release();
-  img.release(); 
+ // src.release();
+ // src_HSV.release();
+ // img.release(); 
 }
   return 0;
 }
