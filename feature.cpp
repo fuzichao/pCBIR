@@ -64,7 +64,7 @@ std::string getImageType(int number)
 int main(int argc, char** argv)
 {
 string path = img_path;
-cout << 100 << " " << 3600 << endl;
+cout << 100 << " " << 562500 << endl;
 for(int kk = 1; kk <= 100; kk++) {
 path = img_path;
 path.append("im");
@@ -145,7 +145,7 @@ Mat img;
 
   int numOrientations = 9;
   int glyphSize = 21;
-  int cellSize = 50;
+  int cellSize = 4;
   int imgWidth = 500, imgHeight = 500;
   int hogWidth = (imgWidth + cellSize/2) / cellSize;
   int hogHeight = (imgHeight + cellSize/2) /cellSize;

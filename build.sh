@@ -3,7 +3,7 @@ if [ $# -gt 0 ] ; then
     echo "compiling $base"
     gcc -ggdb `pkg-config opencv --cflags --libs` $base.c -o $base
 else
-    for i in *.cpp; do
+    for i in feature.cpp; do
         echo "compiling $i"
         g++ -ggdb `pkg-config --cflags opencv` -o `basename $i .cpp` $i  `pkg-config --libs opencv`;
     done
