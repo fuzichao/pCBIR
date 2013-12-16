@@ -3,16 +3,17 @@
 #include <cstdlib>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 const int numDoc = 999;
 char* filename = "feature_input";
 const int TARGET = 0;
 const int DATA = 1;
 const int DIFF = 2;
-const int k = 20;
+const int k = 10;
 int numFea;
 double distance(double* a, double* b) {
   double diff = 0;
-  for(int i = 0; i < numFea; i++) {
+  for(int i = 0; i < numFea - 1; i++) {
     if(a[i]+b[i] != 0)
       diff += pow((a[i] - b[i]), 2.0)/(a[i]+b[i]);
   }
@@ -27,19 +28,20 @@ bool comfunc(doc a, doc b) {
   return (a.score < b.score);
 }
 
-double* initCenter(int offset, int centerN, double* candidate, int numCandidate) {
-  double results = new double [k * numFea];
-  memset(results, 0, k * numFea * sizeof(double));
+void initCenter(double* results, int centerN, double* candidate, int numCandidate) {
   srand(time(0));
   int div_size = numCandidate / centerN;
   for(int i = 0; i < centerN; i++) {
     int pick = rand() % div_size;
-    memcpy(results + (i + offset) * numFea, candidate + i * div_size * numFea, numFea);
+    double * in = results + i * numFea;
+    double * out = candidate + (i * div_size + pick) * numFea;
+    for(int j = 0; j < numFea; j++) {
+      in[j] = out[j];
+    }
   }
-  return results;
 }
 
-int findMatch(double *target, double* center) {
+int findMatch(double *target, double* center, double* sum) {
   double tmp, min = distance(target, center);
   int best = 0;
   for(int i = 1; i < k; i ++) {
@@ -49,109 +51,195 @@ int findMatch(double *target, double* center) {
       best = i;
     }
   }
+  if(sum != NULL) {
+    double* sum_ptr = sum + best * numFea;
+    for(int i = 0; i < numFea; i++) {
+      sum_ptr[i] += target[i];
+    }
+  }
   return best;
+}
+
+int change_check(int* Old, int* New) {
+  for(int i = 0; i < numDoc; i++) {
+    if(Old[i] != New[i]){
+      memcpy(Old, New, sizeof(int) * numDoc);
+      return 1;
+    }
+  }
+  memcpy(Old, New, sizeof(int) * numDoc);
+  return 0;
 }
 
 int main(int argc, char** argv) {
   int np, rank, count; 
   MPI_Init(&argc, &argv);
-  numFea = atoi(argv[1]);
+  numFea = atoi(argv[1]) + 1;
   MPI_File infile;
   MPI_Status status;
-  MPI_Offset filesize;
   MPI_Comm_size(MPI_COMM_WORLD, &np);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  char fn[strlen(filename) + 1];
-  sprintf(fn, "%s%d",filename, rank);
-  MPI_File_open(MPI_COMM_WORLD, fn, MPI_MODE_RDONLY, MPI_INFO_NULL, &infile);
-  MPI_File_get_size(infile, &filesize);
-  int div_work = numDoc / np;
-  int mas_work = div_work + numDoc % np;
-  double* target;
-  double* featureArray = new double[numDoc * numFea];
-  int* mapper = new int[numDoc];
-  double* buf;
-  double* center;//#center * numFea
-  if ( rank == 0 ) 
-  {
-    double start = MPI_Wtime();
-    MPI_Request recvQ[np], tmp;
-    double diff[numDoc];
-    buf = featureArray;
-    MPI_File_set_view(infile, 0, MPI_DOUBLE, MPI_DOUBLE, "native", MPI_INFO_NULL);
-    MPI_File_read(infile, buf, mas_work*numFea, MPI_DOUBLE, &status);
-    MPI_Get_count(&status, MPI_DOUBLE, &count);
-    MPI_File_close(&infile);
-    double readt = MPI_Wtime();
-    cout << "proc " << rank << " reading time : " << readt - start << endl;
-    //std::cout.precision(12);
-    //cout <<fixed<< "proc " << rank << " reading time from " << start << "to "<< readt  << endl;
-    
-    //init centers
-    center = initCenter(0, k / np + k % np, buf, mas_work);
-    target = featureArray + 0*numFea; //use the first img as test
-    MPI_Bcast(target, numFea, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    for (int i = 0; i < np; i ++) {
-      if( i == 0)
-        MPI_Bcast(center, numFea * (k /np + k % np),  MPI_DOUBLE, i, MPI_COMM_WORLD);
-      else
-        MPI_Bcast(center + numFea * (k/np+k%np + (i-1)*k/np), numFea * k/np, MPI_DOUBLE, i, MPI_COMM_WORLD);
+  int work_size[np];
+  int center_size[np];
+  int center_disp[np];
+  int work_disp[np];
+  for(int i = 0; i < np; i++) {
+    if(i == 0) {
+      work_size[i] = numDoc / np + numDoc % np;
+      center_size[i]= (k / np + k % np) * numFea;
+      center_disp[i] = 0;
+      work_disp[i] = 0;
+    } else {
+      work_size[i] = numDoc / np;
+      center_size[i] = k / np * numFea;
+      center_disp[i] = (k/np + k%np + k/np*(i - 1)) * numFea;
+      work_disp[i] = numDoc/np + numDoc %np + (i - 1) * numDoc / np;
     }
-    //init center assignment
-    for (int i = 0; i < mas_work, i++) {
-      mapper[i] = findMatch(feature + i * numFea, center);
-    }
-    for (int i = 0; i < np; i ++) {
-      if( i == 0)
-        MPI_Bcast(mapper, mas_work, MPI_INT, i, MPI_COMM_WORLD);
-      else
-        MPI_Bcast(mapper + mas_work + (i-1) * div_work, div_work, MPI_INT, i, MPI_COMM_WORLD);
-    }
-       
-
-
-    for (int i = 1; i < np; i ++) {
-//      MPI_Isend(featureArray + (mas_work + (i - 1) * div_work) * numFea, div_work * numFea, MPI_DOUBLE, i, DATA, MPI_COMM_WORLD, &tmp);
-      MPI_Irecv(diff + mas_work + (i - 1)*div_work, div_work, MPI_DOUBLE, i, DIFF, MPI_COMM_WORLD, &recvQ[i]);
-    }
-    for(int i = 0; i < mas_work; i++) {
-      diff[i] = distance(target, featureArray + i*numFea);
-    }
-    MPI_Waitall(np - 1, recvQ + 1, 0);
-    doc results[numDoc];
-    for(int i =0; i < numDoc; i++) {
-       results[i].id = i+1;
-       results[i].score = diff[i];
-    }
-    sort(results, results + numDoc, comfunc);
-    double end = MPI_Wtime();
-/*    for(int j = 0; j < 100; j++) {
-      cout << j << " " << results[j].id << " " << results[j].score<<endl;
-    }*/
-    cout << "total time: " << end - start << endl;
-        
-    
-  } else {
-    double start = MPI_Wtime();
-    featureArray = new double[div_work * numFea];
-    int previous = numFea * (mas_work + div_work * (rank - 1));
-    MPI_File_set_view(infile, 0, MPI_DOUBLE, MPI_DOUBLE, "native", MPI_INFO_NULL);
-    MPI_File_read(infile, featureArray, div_work * numFea, MPI_DOUBLE, &status);
-    MPI_Get_count(&status, MPI_DOUBLE, &count);
-    MPI_File_close(&infile);
-    double readt = MPI_Wtime();
-    cout << "proc " << rank << " reading time : " << readt - start << endl;
-    //std::cout.precision(12);
-    ///cout <<fixed<< "proc " << rank << " reading time from " << start << "to "<< readt  << endl;
-    target = new double [numFea];
-  //  MPI_Recv(featureArray, div_work * numFea, MPI_DOUBLE, 0, DATA, MPI_COMM_WORLD, 0);
-    MPI_Bcast(target, numFea, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    double diff[div_work];
-    for(int i = 0; i < div_work; i++) {
-      diff[i] = distance(target, featureArray + i * numFea);
-    }
-    MPI_Send(diff, div_work, MPI_DOUBLE, 0, DIFF, MPI_COMM_WORLD);
   }
+  char fn[strlen(filename) + 1];
+  sprintf(fn, "%s%d%d",filename, np, rank);
+cout << fn << " "<<rank << endl;
+  MPI_File_open(MPI_COMM_WORLD, fn, MPI_MODE_RDONLY, MPI_INFO_NULL, &infile);
+  double* target = new double[numFea];
+  int* mapper;
+  int* tmp_mapper = new int[work_size[rank]];
+  int* ele_cnt = new int[k];
+  memset(ele_cnt, 0, k * sizeof(int));
+  double* featureArray = new double[numFea * work_size[rank]];
+  double* center = new double [k * numFea];
+  double* partialSum = new double[k * numFea];
+  memset(partialSum, 0, k * numFea * sizeof(double));
+  double start = MPI_Wtime();
+  double* sum;
+  int* ele_cnt_sum;
+  MPI_File_set_view(infile, 0, MPI_DOUBLE, MPI_DOUBLE, "native", MPI_INFO_NULL);
+  MPI_File_read(infile, featureArray, work_size[rank] * numFea, MPI_DOUBLE, &status);
+  MPI_File_close(&infile);
+  if(rank == 0) {
+    ifstream qfile ("feature_inputquery", ios::in | ios::binary);
+    qfile.read((char*)target, numFea * sizeof(double));
+    qfile.close();
+  }
+  double readt = MPI_Wtime();
+  cout << "proc " << rank << " reading time : " << readt - start << endl;
+  
+  //std::cout.precision(12);
+  //cout <<fixed<< "proc " << rank << " reading time from " << start << "to "<< readt  << endl;
+  
+  //init centers
+  double* tmp_center = new double[center_size[rank]];
+  if(rank == 0) {
+    mapper = new int[numDoc];
+    ele_cnt_sum = new int [k];
+    sum = new double[k * numFea];
+    memset(sum, 0, k * numFea * sizeof(double));
+    initCenter(tmp_center, center_size[rank] / numFea, featureArray, work_size[rank]);
+  } else {
+    initCenter(tmp_center, center_size[rank] / numFea, featureArray, work_size[rank]);
+    target = new double[numFea];
+  }
+  
+  MPI_Bcast(target, numFea, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gatherv(tmp_center, center_size[rank], MPI_DOUBLE, center, center_size, center_disp, MPI_DOUBLE, 0, MPI_COMM_WORLD);//gather centers
+  MPI_Bcast(center, k * numFea, MPI_DOUBLE, 0, MPI_COMM_WORLD);//broadcast centers
+
+  //init center assignment
+  int* tmp_id = new int[work_size[rank]];
+  for (int i = 0; i < work_size[rank]; i++) {
+    tmp_mapper[i] = findMatch(featureArray + i * numFea, center, partialSum);
+    ele_cnt[tmp_mapper[i]]++;
+    tmp_id[i] = *(featureArray + (i + 1) * numFea - 1);
+  }
+
+  int* id_features;
+  if(rank == 0)
+    id_features = new int[numDoc];
+  MPI_Gatherv(tmp_id, work_size[rank], MPI_INT, id_features, work_size, work_disp, MPI_INT, 0, MPI_COMM_WORLD);
+  
+
+  //gather mapper
+  MPI_Gatherv(tmp_mapper, work_size[rank], MPI_INT, mapper, work_size, work_disp, MPI_INT, 0, MPI_COMM_WORLD);
+  //get  sum and ele_cnt
+  MPI_Reduce(partialSum, sum, k * numFea, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+  MPI_Reduce(ele_cnt, ele_cnt_sum, k, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+  int changed = 1;
+  int* new_mapper;
+  if(rank ==0) {
+    new_mapper = new int[numDoc];
+  }
+  int counter = 0;
+  do {
+    counter ++;
+    if(rank == 0) {
+      //calculate new center
+      for(int j = 0; j < k; j++) {
+        for(int i = 0; i < numFea; i ++) {
+          center[j * numFea + i] = sum[j * numFea + i] / ele_cnt_sum[j];
+        }
+      }
+    }
+    //distribute new center
+    MPI_Bcast(center, numFea * k, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    //locally calculate new match
+    memset(ele_cnt, 0, k * sizeof(int));
+    memset(partialSum, 0, k * numFea * sizeof(double));
+    for (int i = 0; i < work_size[rank]; i++) {
+      tmp_mapper[i] = findMatch(featureArray + i * numFea, center, partialSum);
+      ele_cnt[tmp_mapper[i]]++;
+    }
+    //gather mapper
+    MPI_Gatherv(tmp_mapper, work_size[rank], MPI_INT, new_mapper, work_size, work_disp, MPI_INT, 0, MPI_COMM_WORLD);
+    //get  sum and ele_cnt
+    MPI_Reduce(partialSum, sum, k * numFea, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Reduce(ele_cnt, ele_cnt_sum, k, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    if(rank == 0) {
+      changed = change_check(mapper, new_mapper);
+    }
+    MPI_Bcast(&changed, 1, MPI_INT, 0, MPI_COMM_WORLD);
+  }while(changed);
+
+  
+  //determine which cluster
+  int cindex;
+  if(rank ==0) {
+    cindex = findMatch(target, center, 0);
+  }
+  MPI_Bcast(&cindex, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+
+  double* scores = new double[work_size[rank]];
+  for(int i = 0; i < work_size[rank]; i++) {
+      if(tmp_mapper[i] == cindex)
+        scores[i] = distance(target, featureArray + i * numFea);
+       else 
+        scores[i] = -1;
+  }
+  double* scores_total = new double[numDoc];
+  MPI_Gatherv(scores, work_size[rank], MPI_DOUBLE, scores_total, work_size, work_disp, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  if(rank == 0) {
+    doc* scores_filtered = new doc[ele_cnt_sum[cindex]];
+    int cnt= 0;
+    for(int i = 0; i < numDoc; i++) {
+      if(scores_total[i] >= 0) {
+        scores_filtered[cnt].id = id_features[i];
+        scores_filtered[cnt].score = scores_total[i];
+        cnt ++;
+      }
+      
+    }
+    
+    sort(scores_filtered, scores_filtered + ele_cnt_sum[cindex], comfunc);
+
+    for (int i = 0; i < 10; i ++) {
+     cout << scores_filtered[i].id << " " << scores_filtered[i].score << endl;
+    }
+  }
+  double end = MPI_Wtime();
+
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  if(rank == 0)
+    cout << "total iteration: " << counter << " \ntotal time: " << end - start << endl;
   MPI_Finalize();
   return 0;
 }

@@ -8,26 +8,30 @@
 #include <fstream>
 #include <string>
 #include <cmath>
+#include <omp.h>
 #include <vector>
 using namespace cv;
 using namespace std;
 
 const char* out_path = "feature_input";
-const char* img_path = "/home/zichao/image.orig/";
+char* img_path = "/home/zichao/image.orig/";
 const double PI = 3.141592653;
 const int H_nbins = 18;
 const int S_nbins = 3;
 const int V_nbins = 3;
 const int CELLSIZE = 40;
 const int IMG_SIZE = 300;
-const int imgN = 999;
+int imgN = 999;
 const int totalbins = H_nbins * S_nbins * V_nbins;
 //suggested by http://scien.stanford.edu/pages/labsite/2002/psych221/projects/02/sojeong
-void writeFeatures(int numFea, double* features, int index) {
+void writeFeatures(int partN, int numFea, double* features, int index) {
   string tmp = out_path;
   char index_str[10];
-  memset(index_str, 0, 10);
-  sprintf(index_str, "%d", index); 
+  memset(index_str, 0, 10); 
+  if(partN == -1)
+    sprintf(index_str, "query"); 
+  else 
+    sprintf(index_str, "%d%d", partN,index); 
   tmp.append(index_str);
   ofstream ofile (tmp.c_str(), ios::out|ios::binary | ios::app);
   ofile.write((char*)features, sizeof(double) * numFea);
@@ -37,51 +41,65 @@ void writeFeatures(int numFea, double* features, int index) {
 
 int main(int argc, char** argv)
 {
-  if (argc != 3) { 
-    cout << "usage: "<<argv[0]<<" <useHOG>{1/0} <partition#>\n";
+  if (argc != 4) { 
+    cout << "usage: "<<argv[0]<<" <useHOG>{1/0} -p <partition#> | -f <query image path>\n";
     return -1;
   }
   bool useHOG = atoi(argv[1]);
-  int partN = atoi(argv[2]);
-  cout << "partition into " << partN << "files" << endl;
+  int partN = -1;
+  bool query = false;
+  if(argv[2][1] == 'p')
+    partN = atoi(argv[3]);
+  else {
+    query = true;
+    imgN = 1;
+    img_path = argv[3];
+  }
+  cout << "partition into " << partN << " files" << endl;
   if(useHOG) {
     int size = (IMG_SIZE + CELLSIZE/2) / CELLSIZE;
-    cout << "using HOG feature\nfeature size:" << (size * size * 4 * 9) << endl;
+    cout << "using HOG feature\nfeature size:" << (size * size * 4 * 9)<< endl;
   } else {
-    cout << "using color histogram\nfeature size:" << totalbins << endl;
+    cout << "using color histogram\nfeature size:" << totalbins<< endl;
   }
-  //empty output file
- // std::ofstream file(out_path, std::ios::trunc);
- // file.close();
-  string path = img_path;
   int index;
+  double start_t = omp_get_wtime();
+  #pragma omp parallel for
   for(int img_id = 1; img_id <= imgN; img_id++) {
-    //mapping img_id to idex
-    if ( img_id <= (imgN / partN + imgN % partN) )
-      index = 0;
-    else 
-      index = (img_id - (imgN / partN + imgN % partN))/(imgN / partN) + 1;
-    index = fmin(partN - 1, index);
-    path = img_path;
-    char tmpp[10];
-    memset(tmpp, 0, 10);
-    sprintf(tmpp, "%d", img_id);
-    path.append(tmpp);
-    path.append(".jpg");
+    string path = img_path;
+    if(!query) {
+      //mapping img_id to idex
+      if ( img_id <= (imgN / partN + imgN % partN) )
+        index = 0;
+      else 
+        index = (img_id - (imgN / partN + imgN % partN))/(imgN / partN) + 1;
+      index = fmin(partN - 1, index);
+    } else {
+        index = -1;
+    }
+    if(!query) {
+      char tmpp[10];
+      memset(tmpp, 0, 10);
+      sprintf(tmpp, "%d", img_id);
+      path.append(tmpp);
+      path.append(".jpg");
+    }
     Mat src, src_HSV;
     Size dsize = Size(IMG_SIZE, IMG_SIZE);//resize image
     if(!useHOG) {
       src = imread( path.c_str() );
       cvtColor( src, src_HSV, CV_BGR2HSV );
       Mat img1;
-      resize(src_HSV, img1, dsize);
-      //color histogram part
+      #pragma omp critial
+      {
+        resize(src_HSV, img1, dsize);
+      } 
+     //color histogram part
       //init an array for historgam
-      double hist[totalbins];
+      double hist[totalbins + 1];
       for(int i = 0; i < totalbins; i++){
         hist[i] =0;
       }
-      //serial version: traverse each pixels one by one
       for(int x = 0; x < IMG_SIZE; x++) {
         for(int y = 0; y < IMG_SIZE; y++) {
           Vec3b pixel = img1.at<Vec3b>(x, y);
@@ -94,14 +112,17 @@ int main(int argc, char** argv)
           hist[H_index * S_nbins * V_nbins + S_index * V_nbins + V_index]++;
         }
       }
-      writeFeatures(totalbins, hist, index);
+      hist[totalbins] = img_id;
+      writeFeatures(partN, totalbins + 1, hist, index);
     } else {
       //HOG feature extraction
-      src = imread( path.c_str(), 0);
       Mat img;
-      resize(src, img, dsize);
+      src = imread( path.c_str(), 0);
+      #pragma omp critical
+      { 
+        resize(src, img, dsize);
+      }
       int numOrientations = 9;
-      int glyphSize = 21;
       int cellSize = CELLSIZE;
       int imgWidth = IMG_SIZE, imgHeight = IMG_SIZE;
       int hogWidth = (imgWidth + cellSize/2) / cellSize;
@@ -115,33 +136,6 @@ int main(int argc, char** argv)
         double angle = (double)i * PI / numOrientations;
         orientX[i] = cos(angle);
         orientY[i] = sin(angle); 
-      }
-      
-      double glyphs[glyphSize * glyphSize * numOrientations];
-      for(int i = 0; i < numOrientations; i++) {
-        double angle = fmod((double)i * PI / (double)numOrientations + PI/2, PI);
-        double x2 = glyphSize * cos(angle) / 2;
-        double y2 = glyphSize * sin(angle) / 2;
-        
-        if( angle <= PI/4 || angle >= PI* 0.75) {
-          double slope = y2 / x2;
-          double offset = (1 - slope) * (glyphSize - 1) / 2;
-          int skip = (1 - fabs(cos(angle))) / 2 * glyphSize;
-          int j, k;
-          for(j = skip; j < glyphSize - skip; j++) {
-            k = round(slope * j + offset);
-            glyphs[j + glyphSize * k + glyphSize * glyphSize * i] = 1;
-          }
-        } else {
-          double slope = x2 / y2;
-          double offset = (1 - slope) * (glyphSize - 1) / 2;
-          int skip = (1 - fabs(sin(angle))) / 2 * glyphSize;
-          int j, k;
-          for(j = skip; j < glyphSize - skip; j++) {
-            k = round(slope * j + offset);
-            glyphs[k + glyphSize * j + glyphSize * glyphSize * i] = 1;
-          }
-        }
       }
       //prepare buffer
       int numChannels = 1;
@@ -228,7 +222,7 @@ int main(int argc, char** argv)
           }
         }
       }
-      double* hogFeature = new double[hogWidth * hogHeight * dimension];
+      double* hogFeature = new double[1 + hogWidth * hogHeight * dimension];
       //extract results
       //compute the L2 norm
       double * iter = hog;
@@ -284,12 +278,15 @@ int main(int argc, char** argv)
           iter ++;
          }
       }
-      writeFeatures(hogWidth * hogHeight * dimension, hogFeature, index);
+      hogFeature[hogWidth * hogHeight * dimension] = img_id;
+      writeFeatures(partN, hogWidth * hogHeight * dimension + 1, hogFeature, index);
       delete[] hogFeature;
       delete[] hog;     
       delete[] hogNorm;
     }
   }
+  double end_t = omp_get_wtime();
+  cout << "feature extraction time: " << end_t - start_t << endl;
   return 0;
 }
 
