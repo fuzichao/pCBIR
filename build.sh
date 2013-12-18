@@ -1,11 +1,5 @@
-if [ $# -gt 0 ] ; then
-    base=`basename $1 .c`
-    echo "compiling $base"
-    gcc -ggdb `pkg-config opencv --cflags --libs` $base.c -o $base
-else
-    for i in feature.cpp; do
-        echo "compiling $i"
-        g++ -ggdb `pkg-config --cflags opencv` -o `basename $i .cpp` $i  `pkg-config --libs opencv`;
-    done
-fi
+echo "compiling feature_extractor"
+g++ -fopenmp -ggdb `pkg-config --cflags opencv` -o feature feature.cpp `pkg-config --libs opencv` 2>1 compile_warning
+echo "compiling query_handler"
+mpic++ -o cluster cluster.cpp 2>1 compile_warining
 

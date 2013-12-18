@@ -4,12 +4,12 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-const int numDoc = 999;
+const int numDoc = 9907;
 char* filename = "feature_input";
 const int TARGET = 0;
 const int DATA = 1;
 const int DIFF = 2;
-const int k = 10;
+const int k = 160;
 int numFea;
 double distance(double* a, double* b) {
   double diff = 0;
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
       work_size[i] = numDoc / np;
       center_size[i] = k / np * numFea;
       center_disp[i] = (k/np + k%np + k/np*(i - 1)) * numFea;
-      work_disp[i] = numDoc/np + numDoc %np + (i - 1) * numDoc / np;
+      work_disp[i] = numDoc/np + numDoc %np + (i - 1) * (numDoc / np);
     }
   }
   char fn[strlen(filename) + 1];
@@ -121,10 +121,6 @@ int main(int argc, char** argv) {
   }
   double readt = MPI_Wtime();
   cout << "proc " << rank << " reading time : " << readt - start << endl;
-  
-  //std::cout.precision(12);
-  //cout <<fixed<< "proc " << rank << " reading time from " << start << "to "<< readt  << endl;
-  
   //init centers
   double* tmp_center = new double[center_size[rank]];
   if(rank == 0) {
@@ -154,8 +150,6 @@ int main(int argc, char** argv) {
   if(rank == 0)
     id_features = new int[numDoc];
   MPI_Gatherv(tmp_id, work_size[rank], MPI_INT, id_features, work_size, work_disp, MPI_INT, 0, MPI_COMM_WORLD);
-  
-
   //gather mapper
   MPI_Gatherv(tmp_mapper, work_size[rank], MPI_INT, mapper, work_size, work_disp, MPI_INT, 0, MPI_COMM_WORLD);
   //get  sum and ele_cnt
@@ -189,6 +183,7 @@ int main(int argc, char** argv) {
     //gather mapper
     MPI_Gatherv(tmp_mapper, work_size[rank], MPI_INT, new_mapper, work_size, work_disp, MPI_INT, 0, MPI_COMM_WORLD);
     //get  sum and ele_cnt
+ 
     MPI_Reduce(partialSum, sum, k * numFea, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(ele_cnt, ele_cnt_sum, k, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(rank == 0) {
