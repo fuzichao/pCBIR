@@ -98,7 +98,6 @@ int main(int argc, char** argv) {
   }
   char fn[strlen(filename) + 1];
   sprintf(fn, "%s%d%d",filename, np, rank);
-cout << fn << " "<<rank << endl;
   MPI_File_open(MPI_COMM_WORLD, fn, MPI_MODE_RDONLY, MPI_INFO_NULL, &infile);
   double* target = new double[numFea];
   int* mapper;

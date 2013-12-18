@@ -14,14 +14,14 @@ using namespace cv;
 using namespace std;
 
 const char* out_path = "feature_input";
-char* img_path = "/home/zichao/image.orig/";
+char* img_path = "/home/zichao/image.vary.jpg/";
 const double PI = 3.141592653;
 const int H_nbins = 18;
 const int S_nbins = 3;
 const int V_nbins = 3;
-const int CELLSIZE = 40;
-const int IMG_SIZE = 300;
-int imgN = 999;
+const int CELLSIZE = 16;
+const int IMG_SIZE = 150;
+int imgN = 9907;
 const int totalbins = H_nbins * S_nbins * V_nbins;
 //suggested by http://scien.stanford.edu/pages/labsite/2002/psych221/projects/02/sojeong
 void writeFeatures(int partN, int numFea, double* features, int index) {
@@ -46,7 +46,7 @@ int main(int argc, char** argv)
     return -1;
   }
   bool useHOG = atoi(argv[1]);
-  int partN = -1;
+  int partN = 9907;
   bool query = false;
   if(argv[2][1] == 'p')
     partN = atoi(argv[3]);
@@ -62,18 +62,21 @@ int main(int argc, char** argv)
   } else {
     cout << "using color histogram\nfeature size:" << totalbins<< endl;
   }
-  int index;
   double start_t = omp_get_wtime();
   #pragma omp parallel for
   for(int img_id = 1; img_id <= imgN; img_id++) {
+    int index;
     string path = img_path;
     if(!query) {
       //mapping img_id to idex
-      if ( img_id <= (imgN / partN + imgN % partN) )
+      if ( img_id <= (imgN / partN + imgN % partN) ){
         index = 0;
-      else 
+      }
+      else { 
         index = (img_id - (imgN / partN + imgN % partN))/(imgN / partN) + 1;
-      index = fmin(partN - 1, index);
+        if((img_id - (imgN / partN + imgN % partN))%(imgN / partN)==0)
+          index --;
+      }
     } else {
         index = -1;
     }
